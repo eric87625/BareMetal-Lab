@@ -77,7 +77,21 @@ uint8_t tx_buff[] = { 65, 66, 67, 68, 69, 70, 71, 72, 73, 74 }; //ABCDEFGHIJ in 
 uint8_t rx_buff[10];
 char cmd_buff[30];
 int cmd_buff_idx;
-//static int pcount;
+static int pass_count = 0;
+
+#define RX_BUF_SIZE 64
+
+uint8_t uart1_rx_buf[RX_BUF_SIZE];
+uint8_t uart3_rx_buf[RX_BUF_SIZE];
+
+uint8_t uart1_data[RX_BUF_SIZE];
+uint8_t uart3_data[RX_BUF_SIZE];
+
+volatile uint16_t uart1_len = 0;
+volatile uint16_t uart3_len = 0;
+
+volatile uint8_t uart1_ready = 0;
+volatile uint8_t uart3_ready = 0;
 
 //static int print_val(char *s, int var) {
 //	char buf[256];
@@ -90,96 +104,157 @@ int cmd_buff_idx;
 //	return (ret == HAL_OK) ? len : -1;
 //}
 
-//static int print(char *str, ...) {
-//
-//    char buf[256];
-//    va_list args; // Declare a va_list to hold the variable arguments
-//
-//    va_start(args, str); // Initialize va_list with the last fixed argument (str)
-//    int cur_buf_len = vsnprintf(buf, sizeof(buf), str, args); // Use vsnprintf for variable arguments
-//    va_end(args); // Clean up the va_list
-//
-//    if (cur_buf_len < 0) {
-//        // Handle error during formatting
-//        return -1;
-//    }
-//
-//    // Ensure null termination in case of truncation by snprintf
-//    if (cur_buf_len >= sizeof(buf)) {
-//        buf[sizeof(buf) - 1] = '\0';
-//    }
-//
-//    // Print the formatted string to uart output
-////  HAL_StatusTypeDef ret = HAL_UART_Transmit_DMA(&huart2, (uint8_t *)buf, len);
-////  HAL_StatusTypeDef ret = HAL_UART_Transmit_IT(&huart2, (uint8_t *)buf, len);
-//	int ret = HAL_UART_Transmit(&huart2, (uint8_t*) buf, cur_buf_len, HAL_MAX_DELAY) == HAL_OK;
-//	return ret;
-//}
+static int print(const char *str, ...) {
 
-static int print(char *str, ...) {
+    char buf[256];
+    va_list args; // Declare a va_list to hold the variable arguments
 
-	int count = 0;
-	int cur_buf_len = 0;
-	char buf[256];
-	int len = strlen(str);
+    va_start(args, str); // Initialize va_list with the last fixed argument (str)
+    int cur_buf_len = vsnprintf(buf, sizeof(buf), str, args); // Use vsnprintf for variable arguments
+    va_end(args); // Clean up the va_list
 
-	memset(buf, 0, sizeof(buf));
+    if (cur_buf_len < 0) {
+        // Handle error during formatting
+        return -1;
+    }
 
-//	print_val("pcount = %d\r\n", pcount++);
+    // Ensure null termination in case of truncation by snprintf
+    if (cur_buf_len >= sizeof(buf)) {
+        buf[sizeof(buf) - 1] = '\0';
+    }
 
-	va_list args;
-	va_start(args, str);
-
-	for (int i = 0; i < len; i++) {
-		if (str[i] == '%') {
-			i++;
-
-			/* Print variable to buffer BEGIN */
-			switch (str[i]) {
-			case 'd':
-				int val = va_arg(args, int);
-
-				int prev_len = strlen(buf);
-				itoa(val, buf + cur_buf_len, 10);
-				int post_len = strlen(buf);
-				cur_buf_len += post_len - prev_len;
-
-//				cur_buf_len += snprintf(buf + cur_buf_len, sizeof(buf) - cur_buf_len, "%d", val);
-				break;
-			case 'c':
-				int ch = va_arg(args, int);
-
-				buf[cur_buf_len] = ch;
-				cur_buf_len ++;
-
-//				cur_buf_len += snprintf(buf + cur_buf_len, sizeof(buf) - cur_buf_len, "%c", ch);
-				break;
-			case 's':
-				char *string = va_arg(args, char*);
-
-				strcpy(buf + cur_buf_len, string);
-				cur_buf_len += strlen(string);
-
-//				cur_buf_len += snprintf(buf + cur_buf_len, sizeof(buf) - cur_buf_len, "%s", string);
-				break;
-			}
-			/* Print variable to buffer END */
-			count++;
-		} else {
-			buf[cur_buf_len] = str[i];
-			cur_buf_len ++;
-//			cur_buf_len += snprintf(buf + cur_buf_len, sizeof(buf) - cur_buf_len, "%c", str[i]);
-		}
-	}
-	va_end(args);
-
-//  print_val("the number of variables within print is %d\r\n", count);
-
+    // Print the formatted string to uart output
 //  HAL_StatusTypeDef ret = HAL_UART_Transmit_DMA(&huart2, (uint8_t *)buf, len);
 //  HAL_StatusTypeDef ret = HAL_UART_Transmit_IT(&huart2, (uint8_t *)buf, len);
 	int ret = HAL_UART_Transmit(&huart2, (uint8_t*) buf, cur_buf_len, HAL_MAX_DELAY) == HAL_OK;
 	return ret;
 }
+
+//int print(const char *str, ...) {
+//
+//	int count = 0;
+//	int cur_buf_len = 0;
+//	char buf[256];
+//	int len = strlen(str);
+//
+//	memset(buf, 0, sizeof(buf));
+//
+//	va_list args;
+//	va_start(args, str);
+//
+//	for (int i = 0; i < len; i++) {
+//		if (str[i] == '%') {
+//			i++;
+//
+//			/* Print variable to buffer BEGIN */
+//			switch (str[i]) {
+//			case 'd':
+//				int val = va_arg(args, int);
+//
+//				int prev_len = strlen(buf);
+//				itoa(val, buf + cur_buf_len, 10);
+//				int post_len = strlen(buf);
+//				cur_buf_len += post_len - prev_len;
+//
+////				cur_buf_len += snprintf(buf + cur_buf_len, sizeof(buf) - cur_buf_len, "%d", val);
+//				break;
+//			case 'c':
+//				int ch = va_arg(args, int);
+//
+//				buf[cur_buf_len] = ch;
+//				cur_buf_len ++;
+//
+////				cur_buf_len += snprintf(buf + cur_buf_len, sizeof(buf) - cur_buf_len, "%c", ch);
+//				break;
+//			case 's':
+//				char *string = va_arg(args, char*);
+//
+//				strcpy(buf + cur_buf_len, string);
+//				cur_buf_len += strlen(string);
+//
+////				cur_buf_len += snprintf(buf + cur_buf_len, sizeof(buf) - cur_buf_len, "%s", string);
+//				break;
+//			}
+//			/* Print variable to buffer END */
+//			count++;
+//		} else {
+//			buf[cur_buf_len] = str[i];
+//			cur_buf_len ++;
+////			cur_buf_len += snprintf(buf + cur_buf_len, sizeof(buf) - cur_buf_len, "%c", str[i]);
+//		}
+//	}
+//	va_end(args);
+//
+////  print_val("the number of variables within print is %d\r\n", count);
+//
+////    int ret = HAL_UART_Transmit_DMA(&huart2, (uint8_t *)buf, cur_buf_len) == HAL_OK;
+////    int ret = HAL_UART_Transmit_IT(&huart2, (uint8_t *)buf, cur_buf_len);
+//	int ret = HAL_UART_Transmit(&huart2, (uint8_t*) buf, cur_buf_len, HAL_MAX_DELAY) == HAL_OK;
+//	return ret;
+//}
+
+void uart_init_dma(void)
+{
+    print("Start UART1 DMA RX...\r\n");
+    HAL_UART_Receive_DMA(&huart1, uart1_rx_buf, RX_BUF_SIZE);
+    print("UART1 DMA RX started\r\n");
+
+    HAL_UART_Receive_DMA(&huart3, uart3_rx_buf, RX_BUF_SIZE);
+    print("UART3 DMA RX started\r\n");
+
+    __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
+    print("UART1 IDLE enabled\r\n");
+
+    __HAL_UART_ENABLE_IT(&huart3, UART_IT_IDLE);
+    print("UART3 IDLE enabled\r\n");
+
+    print("end of uart_init_dma\r\n");
+}
+
+
+void uart_send(UART_HandleTypeDef *huart, const char *msg)
+{
+	pass_count ++;
+//    HAL_UART_Transmit_DMA(huart, (uint8_t *)msg, strlen(msg));
+    HAL_UART_Transmit(huart, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
+/* ---------- IDLE callback (no TX) ---------- */
+void HAL_UART_IDLE_Callback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1) {
+        __HAL_UART_CLEAR_IDLEFLAG(huart);
+        uint16_t received = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
+
+        memcpy(uart1_data, uart1_rx_buf, received);
+        uart1_len = received;
+        uart1_ready = 1;      // flag，只做這個
+
+        // 重新啟動 DMA
+        HAL_UART_DMAStop(huart);
+        HAL_UART_Receive_DMA(huart, uart1_rx_buf, RX_BUF_SIZE);
+    }
+
+    else if (huart->Instance == USART3) {
+        __HAL_UART_CLEAR_IDLEFLAG(huart);
+        uint16_t received = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
+
+        memcpy(uart3_data, uart3_rx_buf, received);
+        uart3_len = received;
+        uart3_ready = 1;      // flag
+
+        HAL_UART_DMAStop(huart);
+        HAL_UART_Receive_DMA(huart, uart3_rx_buf, RX_BUF_SIZE);
+    }
+}
+
+void dma_rx_reset(UART_HandleTypeDef *huart)
+{
+    __HAL_DMA_DISABLE(huart->hdmarx);
+    huart->hdmarx->Instance->CNDTR = RX_BUF_SIZE;  // reset DMA counter
+    __HAL_DMA_ENABLE(huart->hdmarx);
+}
+
 
 /* USER CODE END 0 */
 
@@ -218,32 +293,73 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 	cmd_buff_idx = 0;
-//	pcount = 0;
-
 	int number_of_dogs = 5;
 	char *dogs_name = "George";
+
+	print("\r\nSTART ~ \r\n");
+
 	print("There are %d dogs, all named %s !\r\n", number_of_dogs, dogs_name);
 	print("There are %d dogs, all named %s !\r\n", number_of_dogs, dogs_name);
+
+	print("=== UART1 <-> UART3 DMA loopback test ===\r\n");
+
+	uart_init_dma();
+
+	while (HAL_GetTick() < 3000) {
+
+	    if (uart1_ready) {
+	        uart1_ready = 0;
+
+	        print("\r\n[UART1][PASS:%d] recv %d bytes\r\n", pass_count, uart1_len);
+
+	        // 打印資料
+	        for (uint16_t i = 0; i < uart1_len; i++)
+	            print("%c", uart1_data[i]);
+
+	        print("\r\n");
+
+	        // 回傳 Ping
+	        uart_send(&huart3, "Ping from UART1\r\n");
+
+	        // 清空 UART3 的 RX buffer（避免下一輪越來越長）
+	        dma_rx_reset(&huart3);
+	    }
+
+	    if (uart3_ready) {
+	        uart3_ready = 0;
+
+	        print("\r\n[UART3][PASS:%d] recv %d bytes\r\n", pass_count, uart3_len);
+
+	        // 打印資料
+	        for (uint16_t i = 0; i < uart3_len; i++)
+	            print("%c", uart3_data[i]);
+
+	        print("\r\n");
+
+	        // 回傳 Pong
+	        uart_send(&huart1, "Pong from UART3\r\n");
+
+	        // 清空 UART1 RX buffer
+	        dma_rx_reset(&huart1);
+	    }
+	}
+
+
 
 	HAL_UART_Receive_DMA(&huart2, rx_buff, 1);
 //	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-	// testing: UART1 to UART3
-//	uint8_t data;
-//	if (HAL_UART_Receive(&huart3, &data, 1, HAL_MAX_DELAY) == HAL_OK) {
-//	    HAL_UART_Transmit(&huart1, &data, 1, HAL_MAX_DELAY);
-//	}
+
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	while (1) {
-    /* USER CODE END WHILE */
+  /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+  /* USER CODE BEGIN 3 */
 //	HAL_UART_Transmit_IT(&huart2, tx_buff, 10);
 //	HAL_Delay(10000);
-	}
+
   /* USER CODE END 3 */
 }
 
@@ -592,13 +708,32 @@ void func_pwm_on(int para_count, char **para){
 	}
 	HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
 	// ARR is time range.
-//	1000hz 16000 = 1000 * 16
-//	500hz 32000   2000 * 16
+//	Duty(%)=ARR/CCR​×100%
+//	ARR (Period) sets the PWM frequency, CCR1 (Pulse) sets the duty cycle.
+//	htim2.Init.Period = 16000;
+//	sConfigOC.Pulse = 5000;
 	htim2.Instance->ARR = 16000000 / Freq;
 	htim2.Instance->CCR1 = htim2.Instance->ARR / 100 * Duty;
-	if( Duty == 100 ){
-		// TODO: GPIO set High (Dynamic switch from PWM)
-//		htim2.Instance->CCR1 = htim2.Instance->ARR; //99.99%
+	//
+	//htim2.Instance->CCR1 = htim2.Instance->ARR; //99.99%
+
+	if (Duty == 100 || Duty ==0 ){
+		// Stop PWM
+		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+
+		// set GPIO mode
+		GPIO_InitTypeDef GPIO_InitStruct = {0};
+		GPIO_InitStruct.Pin = GPIO_PIN_0;
+		GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // 普通 GPIO Output
+		GPIO_InitStruct.Pull = GPIO_NOPULL;
+		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+		HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+		// Duty 100 -> High, Duty 0 -> Low
+		if (Duty == 100)
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
+		else
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
 	}
 	//__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, htim2.Instance->ARR / 100 * Duty);
 	// Start PWM
@@ -606,7 +741,7 @@ void func_pwm_on(int para_count, char **para){
 
 }
 void func_invalid(int para_count, char **para){
-	// TODO: weather or not
+	// TODO: whether or not
 	return;
 }
 
@@ -715,15 +850,19 @@ void process_cmd(void) {
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	process_cmd();
 
-//	print("RX callback triggered\r\n");
+	if (huart->Instance == USART2) {
 
-	HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
-//	HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
+		process_cmd();
+
+	//	print("RX callback triggered\r\n");
+
+		HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
+	//	HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
 
 
-	HAL_UART_Receive_DMA(&huart2, rx_buff, 1);
+		HAL_UART_Receive_DMA(&huart2, rx_buff, 1);
+	}
 }
 /* USER CODE END 4 */
 

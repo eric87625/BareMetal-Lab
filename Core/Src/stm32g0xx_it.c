@@ -46,6 +46,9 @@
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
+extern void print(const char *fmt, ...);
+extern void HAL_UART_IDLE_Callback(UART_HandleTypeDef *huart);
+
 
 /* USER CODE END PFP */
 
@@ -92,6 +95,13 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
+  char *msg = "!!! HARD FAULT !!!\r\n";
+  volatile char *p = msg;
+  while(*p)
+  {
+	while (!(USART1->ISR & USART_ISR_TXFE)) {} // 等待傳送暫存器空
+	USART1->TDR = *p++;
+  }
 
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
@@ -199,13 +209,14 @@ void DMA1_Ch4_7_DMAMUX1_OVR_IRQHandler(void)
 void USART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART1_IRQn 0 */
-//  if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE))
-//  {
-//	  __HAL_UART_CLEAR_IDLEFLAG(&huart1);
-//	  HAL_UART_IDLE_Callback(&huart1);
-//  }
-  /* USER CODE END USART1_IRQn 0 */
+  if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE))
+  {
+	  __HAL_UART_CLEAR_IDLEFLAG(&huart1); // 清掉 IDLE flag
+//	  print("USART1_IRQHandler !!!\r\n");
+	  HAL_UART_IDLE_Callback(&huart1); // 呼叫我們的處理函式
+  }
   HAL_UART_IRQHandler(&huart1);
+  /* USER CODE END USART1_IRQn 0 */
   /* USER CODE BEGIN USART1_IRQn 1 */
 
   /* USER CODE END USART1_IRQn 1 */
@@ -231,13 +242,15 @@ void USART2_IRQHandler(void)
 void USART3_4_LPUART1_IRQHandler(void)
 {
   /* USER CODE BEGIN USART3_4_LPUART1_IRQn 0 */
-//  if (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_IDLE))
-//  {
-//	  __HAL_UART_CLEAR_IDLEFLAG(&huart3);
-//	  HAL_UART_IDLE_Callback(&huart3);
-//  }
-  /* USER CODE END USART3_4_LPUART1_IRQn 0 */
+  if (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_IDLE))
+  {
+	  __HAL_UART_CLEAR_IDLEFLAG(&huart3); // 清掉 IDLE flag
+//	  print("USART3_4_LPUART1_IRQHandler !!!\r\n");
+
+	  HAL_UART_IDLE_Callback(&huart3); // 呼叫我們的處理函式
+  }
   HAL_UART_IRQHandler(&huart3);
+  /* USER CODE END USART3_4_LPUART1_IRQn 0 */
   /* USER CODE BEGIN USART3_4_LPUART1_IRQn 1 */
 
   /* USER CODE END USART3_4_LPUART1_IRQn 1 */
