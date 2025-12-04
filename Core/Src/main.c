@@ -93,16 +93,13 @@ volatile uint16_t uart3_len = 0;
 volatile uint8_t uart1_ready = 0;
 volatile uint8_t uart3_ready = 0;
 
-//static int print_val(char *s, int var) {
-//	char buf[256];
-//	int len = snprintf(buf, sizeof(buf), s, var);
-////  HAL_StatusTypeDef ret = HAL_UART_Transmit_DMA(&huart2, (uint8_t *)buf, len);
-////	HAL_StatusTypeDef ret = HAL_UART_Transmit_IT(&huart2, (uint8_t *)buf, len);
-//	HAL_StatusTypeDef ret = HAL_UART_Transmit(&huart2, (uint8_t*) buf, len,
-//	HAL_MAX_DELAY);
-//
-//	return (ret == HAL_OK) ? len : -1;
-//}
+// ----------------------
+// Binary Packet 定義
+// ----------------------
+// [ cmd_header | length | payload | checksum ]
+#define CMD_HEADER 0xAA
+#define MAX_PAYLOAD_SIZE 32
+
 
 static int print(const char *str, ...) {
 
@@ -222,37 +219,440 @@ void uart_send(UART_HandleTypeDef *huart, const char *msg)
 /* ---------- IDLE callback (no TX) ---------- */
 void HAL_UART_IDLE_Callback(UART_HandleTypeDef *huart)
 {
+    __HAL_UART_CLEAR_IDLEFLAG(huart);
+    print("\r\n ===== HAL_UART_IDLE_Callback =====\r\n");
+
+    uint16_t received_bytes = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
+
+    // 空資料直接忽略（避免第一次啟動就亂觸發）
+    if (received_bytes == 0)
+        return;
+
+    // 避免 DMA 還未接收到完整資料時誤觸發
+    if (received_bytes > RX_BUF_SIZE)
+        return;
+
     if (huart->Instance == USART1) {
-        __HAL_UART_CLEAR_IDLEFLAG(huart);
-        uint16_t received = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
+		memcpy(uart1_data, uart1_rx_buf, received_bytes);
+		uart1_len = received_bytes;
+		uart1_ready = 1;
 
-        memcpy(uart1_data, uart1_rx_buf, received);
-        uart1_len = received;
-        uart1_ready = 1;      // flag，只做這個
+		HAL_UART_DMAStop(huart);
+		memset(uart1_rx_buf, 0, RX_BUF_SIZE);
+		HAL_UART_Receive_DMA(huart, uart1_rx_buf, RX_BUF_SIZE);
+	}
+	else if (huart->Instance == USART3) {
+		memcpy(uart3_data, uart3_rx_buf, received_bytes);
+		uart3_len = received_bytes;
+		uart3_ready = 1;
 
-        // 重新啟動 DMA
-        HAL_UART_DMAStop(huart);
-        HAL_UART_Receive_DMA(huart, uart1_rx_buf, RX_BUF_SIZE);
-    }
-
-    else if (huart->Instance == USART3) {
-        __HAL_UART_CLEAR_IDLEFLAG(huart);
-        uint16_t received = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
-
-        memcpy(uart3_data, uart3_rx_buf, received);
-        uart3_len = received;
-        uart3_ready = 1;      // flag
-
-        HAL_UART_DMAStop(huart);
-        HAL_UART_Receive_DMA(huart, uart3_rx_buf, RX_BUF_SIZE);
-    }
+		HAL_UART_DMAStop(huart);
+		memset(uart3_rx_buf, 0, RX_BUF_SIZE);
+		HAL_UART_Receive_DMA(huart, uart3_rx_buf, RX_BUF_SIZE);
+	}
 }
 
-void dma_rx_reset(UART_HandleTypeDef *huart)
+/* Definition of CMDs BEGIN*/
+typedef void (*CmdHandler)(int argc, char **argv);
+
+// The way to link between CMD(enum type) and CMD(char *) -> struct include both cmd_name & handler.
+typedef struct {
+	char *cmd_name;
+	CmdHandler handler;
+} CmdEntry;
+
+void func_led_on(int para_count, char **para){
+	if(para_count != 0){
+		print("error: func_led_on: para_count != 0, must check!\r\n");
+		return;
+	}
+	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+}
+void func_led_off(int para_count, char **para){
+	if(para_count != 0){
+		print("error: func_led_off: para_count != 0, must check!\r\n");
+		return;
+	}
+	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
+}
+void func_set_led(int para_count, char **para){
+	if(para_count != 1){
+		print("error: func_led_off: para_count = %d != 1, must check!\r\n", para_count);
+		return;
+	}
+	int led_num;
+    sscanf(para[0], "%d", &led_num); // led_num will be 1
+	if (led_num == 1) HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+//	else if (led_num == 2) HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
+}
+void func_uart_tx(int para_count, char **para){
+	char *paraStr = malloc(strlen(para[0]) + 1);  // +1 for '\0'
+	if (paraStr != NULL) {
+	    strcpy(paraStr, para[0]);
+	}
+	HAL_UART_Transmit(&huart2, (uint8_t*)paraStr, strlen(paraStr), HAL_MAX_DELAY);
+	// free
+	free(paraStr);
+}
+void func_pwm_on(int para_count, char **para){
+	if(para_count != 2){
+		print("error: func_led_on: para_count != 2, must check!\r\n");
+		return;
+	}
+	int Duty;
+	int Freq;
+
+	sscanf(para[0], "%d", &Duty);
+	sscanf(para[1], "%d", &Freq);
+	if (Duty > 100)
+	{
+		Duty = 100;
+		print("Warning: Max Duty is 100\r\n");
+	}
+	if (Freq < 0 || Freq > 10000)
+	{
+		Freq = 1000;
+		print("Warning: Freq is out-of-range\r\n");
+	}
+
+	// Stop PWM
+	HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+
+	//htim2.Instance->CCR1 = htim2.Instance->ARR; //99.99%
+
+	if (Duty == 100 || Duty ==0 ){
+		// set GPIO mode
+		GPIO_InitTypeDef GPIO_InitStruct = {0};
+		GPIO_InitStruct.Pin = GPIO_PIN_0;
+		GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // 普通 GPIO Output
+		GPIO_InitStruct.Pull = GPIO_NOPULL;
+		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+		HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+		// Duty 100 -> High, Duty 0 -> Low
+		if (Duty == 100)
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
+		else
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
+	}
+	// TODO: else PIN reset to PWM mode
+	else {
+		//TODO: Init PIN to PWM mode
+		/*
+		 *
+		 *
+		 *
+		 */
+
+		// ARR is time range.
+		//	Duty(%)=ARR/CCR​×100%
+		//	ARR (Period) sets the PWM frequency, CCR1 (Pulse) sets the duty cycle.
+		//	htim2.Init.Period = 16000;
+		//	sConfigOC.Pulse = 5000;
+		htim2.Instance->ARR = 16000000 / Freq;
+		htim2.Instance->CCR1 = htim2.Instance->ARR / 100 * Duty;
+		//
+		// Start PWM
+		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+	}
+
+}
+void func_invalid(int para_count, char **para){
+	// TODO: whether or not
+	return;
+}
+
+CmdEntry cmd_table[] = {
+		{"LED_ON", func_led_on },
+		{"LED_OFF", func_led_off },
+		{"SET_LED", func_set_led },
+		{"UART_TX", func_uart_tx },
+		{"PWM_ON",  func_pwm_on  },
+		{"INVALID_CMD", func_invalid },
+};
+
+enum CMD {
+	LED_ON = 0,    // 0
+	LED_OFF,       // 1
+	SET_LED,       // 2
+	UART_TX,       // 3
+	PWM_ON,        // 4
+	INVALID_CMD,   // 5
+};
+/* Definition of CMDs END*/
+
+
+static int is_valid_input(char c){
+
+	if( (c >= 32 && c <= 126) || c == '\r' || c == '\n' || c == '\t'){
+		print("%c", (int) c);
+		return 1;
+	} else if (c == 3){ // ctrl-c
+		memset(cmd_buff, 0, sizeof(cmd_buff));
+		memset(rx_buff, 0, sizeof(rx_buff));
+		cmd_buff_idx = 0;
+		print("^C\r\n");
+	} else {
+		print("\r\nInvalid input: %d\r\n", c);
+		int i=0;
+		while(i < cmd_buff_idx){
+			print("%c", (int) cmd_buff[i]);
+			i++;
+		}
+		memset(rx_buff, 0, sizeof(rx_buff));
+	}
+	return 0;
+}
+
+void process_cmd(void) {
+
+	char rx_char = rx_buff[0];
+
+	if(!is_valid_input(rx_char)){
+		return;
+	}
+
+	if (rx_char == '\r' || rx_char == '\n' || rx_char == '\t') { // Ready to parse CMD_HEAD,  CMD_PARA
+		cmd_buff[cmd_buff_idx] = '\0'; // overwrite last byte
+
+		/* CMD compare BEGIN */
+		const char *delim = " "; // only accept " " for separate parameters
+		char *token;
+		char cmd_head[10];
+		char *cmd_para[5];
+		int para_count = 0;
+
+		print("\r\nTokens:\n\r");
+
+		// First call to get the first token: CMD_HEAD
+		token = strtok(cmd_buff, delim);
+		print("first token is %s\r\n", token);
+		// Check token in CMD_table
+		CmdHandler cmd_handler;
+		int cmd_idx=0;
+		while(cmd_idx != INVALID_CMD) {
+			if(strcmp(token, cmd_table[cmd_idx].cmd_name)==0) {
+				strcpy(cmd_head, token);
+				cmd_handler = cmd_table[cmd_idx].handler;
+				break;
+			}
+			cmd_idx++;
+		}
+		if(cmd_idx == INVALID_CMD){
+			print("Invalid CMD !\r\n");
+			memset(cmd_buff, 0, sizeof(cmd_buff));
+			memset(rx_buff, 0, sizeof(rx_buff));
+			cmd_buff_idx = 0;
+			return;
+		}
+
+
+		token = strtok(NULL, delim);
+		while (token != NULL) {
+			print("next token is %s\r\n", token);
+			// Subsequent calls with NULL to get the next tokens: CMD_PARA
+			cmd_para[para_count++] = token;
+			token = strtok(NULL, delim);
+		}
+		cmd_handler(para_count, cmd_para);
+		memset(cmd_buff, 0, sizeof(cmd_buff));
+		cmd_buff_idx = 0;
+		/* CMD compare END */
+
+	} else {
+		cmd_buff[cmd_buff_idx++] = rx_char;
+	}
+
+	return;
+}
+
+// ----------------------
+// Hex dump utility
+// ----------------------
+void print_packet(uint8_t *buf, uint8_t len, const char *msg)
 {
-    __HAL_DMA_DISABLE(huart->hdmarx);
-    huart->hdmarx->Instance->CNDTR = RX_BUF_SIZE;  // reset DMA counter
-    __HAL_DMA_ENABLE(huart->hdmarx);
+    print("%s (%d bytes): ", msg, len);
+    for (uint8_t i = 0; i < len; i++) {
+        print("%02X ", buf[i]);
+    }
+    print("\r\n");
+}
+
+// ----------------------
+// 建 packet
+// ----------------------
+uint8_t build_packet(uint8_t *buf, uint8_t cmd_enum, uint8_t *params, uint8_t param_len)
+{
+    uint8_t idx = 0;
+    buf[idx++] = CMD_HEADER;
+
+    uint8_t payload_len = 1 + param_len; // cmd_id + params
+    buf[idx++] = payload_len;
+
+    buf[idx++] = cmd_enum;               // cmd_id first
+    if (param_len > 0 && params != NULL) {
+        memcpy(&buf[idx], params, param_len);
+        idx += param_len;
+    }
+
+    // checksum
+    uint8_t csum = CMD_HEADER + payload_len;
+    csum += cmd_enum;
+    for (uint8_t i = 0; i < param_len; i++) csum += params[i];
+
+    buf[idx++] = csum & 0xFF;
+
+    print_packet(buf, idx, "Built Packet");
+
+    return idx;
+}
+
+
+// ----------------------
+// 發 packet
+// ----------------------
+void uart_send_bytes(UART_HandleTypeDef *huart, uint8_t *buf, uint8_t len)
+{
+    HAL_UART_Transmit(huart, buf, len, HAL_MAX_DELAY);
+}
+
+// ----------------------
+// 解析 packet
+// ----------------------
+// 回傳值：
+//   0 = OK（校驗成功）
+//  -1 = header,length,checksum 有漏
+//  -2 = header 錯誤
+//  -3 = 長度錯誤
+//  -4 = checksum 錯誤
+int parse_packet(uint8_t *buf, uint8_t len)
+{
+    if (len < 3) return -1;  // 至少 header+length+checksum
+
+    if (buf[0] != CMD_HEADER) return -2;
+
+    uint8_t payload_len = buf[1];
+    if (payload_len + 3 != len) return -3;  // total len check
+
+    // checksum
+    uint8_t csum = buf[0] + buf[1];
+    for (uint8_t i = 0; i < payload_len; i++) {
+        csum += buf[2+i];
+    }
+    if ((csum & 0xFF) != buf[len-1]) return -4;
+
+    print_packet(buf, len, "Parse Packet");
+
+    return 0; // valid
+}
+
+void handle_binary_cmd(uint8_t *payload, uint8_t length)
+{
+    uint8_t cmd_id     = payload[0];
+    uint8_t para_count = length - 1;  // 剩下的都是參數
+
+    print("cmd_id = %d\r\n", cmd_id);
+    print("para_count = %d\r\n", para_count);
+
+    if (cmd_id >= INVALID_CMD) {
+        print("Binary CMD invalid: %d\r\n", cmd_id);
+        return;
+    }
+
+    char *argv[5];
+    char temp[5][16];
+
+    if (cmd_id == UART_TX) {
+        // UART_TX 直接把 payload 當字串
+        argv[0] = (char *)&payload[1];
+        cmd_table[cmd_id].handler(para_count, argv);
+        return;
+    }
+
+    // 其他命令用數字轉字串
+    for (int i = 0; i < para_count; i++) {
+        sprintf(temp[i], "%d", payload[1 + i]);
+        argv[i] = temp[i];
+    }
+
+    cmd_table[cmd_id].handler(para_count, argv);
+}
+
+
+/*
+CMD enum 對應：
+LED_ON   = 0
+LED_OFF  = 1
+SET_LED  = 2
+UART_TX  = 3
+PWM_ON   = 4
+*/
+void send_test_cmd(void)
+{
+    static uint8_t cmd_index = 0;  // 記錄下一個要發送的 command
+    uint8_t packet[64];
+    uint8_t len;
+
+    print("\r\n\n=== Sending One Test Binary Command ===\r\n\n");
+
+    switch (cmd_index)
+    {
+        case 0: // LED_ON
+            len = build_packet(packet, LED_ON, NULL, 0);
+            uart_send_bytes(&huart3, packet, len);
+            print("Send LED_ON cmd\r\n");
+
+            {
+//            uint8_t led_num = 1;
+//			len = build_packet(packet, SET_LED, &led_num, 1);
+//			uart_send_bytes(&huart3, packet, len);
+//			uint8_t msg[] = "Hello";
+//			len = build_packet(packet, UART_TX, msg, sizeof(msg));
+//			uart_send_bytes(&huart3, packet, len);
+            }
+
+            break;
+
+        case 1: // LED_OFF
+            len = build_packet(packet, LED_OFF, NULL, 0);
+            uart_send_bytes(&huart1, packet, len);
+            print("Send LED_OFF cmd\r\n");
+            break;
+
+        case 2: // SET_LED
+        {
+            uint8_t led_num = 1;
+            len = build_packet(packet, SET_LED, &led_num, 1);
+            uart_send_bytes(&huart3, packet, len);
+            print("Send SET_LED cmd (led_num=1)\r\n");
+            break;
+        }
+
+        case 3: // UART_TX
+        {
+            uint8_t msg[] = "Hello";
+            len = build_packet(packet, UART_TX, msg, sizeof(msg));
+            uart_send_bytes(&huart3, packet, len);
+            print("Send UART_TX cmd (Hello)\r\n");
+            break;
+        }
+
+        case 4: // PWM_ON
+        {
+            uint8_t pwm_args[2] = {50, 1000 >> 8}; // 根據 handler 調整
+            len = build_packet(packet, PWM_ON, pwm_args, 2);
+            uart_send_bytes(&huart3, packet, len);
+            print("Send PWM_ON cmd (Duty=50, Freq=1000)\r\n");
+            break;
+        }
+
+        default:
+            print("All test cmds sent, restarting...\r\n");
+            cmd_index = 0;  // 從頭開始
+            return;
+    }
+
+    cmd_index++; // 下一次呼叫送下一個 command
 }
 
 
@@ -305,42 +705,70 @@ int main(void)
 
 	uart_init_dma();
 
+	// 手動發第一次 Ping（你決定是否要啟動）
+//	uart_send(&huart1, "Ping from UART1\r\n");
+//	uart_send(&huart3, "Ping from UART3\r\n");
+//    send_test_cmd();
+
+
 	while (HAL_GetTick() < 3000) {
+		HAL_Delay(500);
+	    send_test_cmd();
+
 
 	    if (uart1_ready) {
-	        uart1_ready = 0;
 
 	        print("\r\n[UART1][PASS:%d] recv %d bytes\r\n", pass_count, uart1_len);
+	        // print msg
+//	        for (uint16_t i = 0; i < uart1_len; i++)
+//	            print("%c", uart1_data[i]);
+//	        print("\r\n");
 
-	        // 打印資料
-	        for (uint16_t i = 0; i < uart1_len; i++)
-	            print("%c", uart1_data[i]);
+	        /* handle_binary_cmd */
+	        //TODO:
+//	        int ret = parse_packet(uart1_data, uart1_len, idx);
+	        print_packet(uart1_data, uart1_len, "uart1_data = ");
 
-	        print("\r\n");
+	        int ret = parse_packet(uart1_data, uart1_len);
+			if (ret == 0) {
+				uint8_t payload_len = uart1_data[1];       // payload_len = cmd_id + params
+				uint8_t *payload = &uart1_data[2];         // payload start = cmd_id
 
-	        // 回傳 Ping
-	        uart_send(&huart3, "Ping from UART1\r\n");
+				handle_binary_cmd(payload, payload_len);
+			} else {
+				print("Packet error: %d\r\n", ret);
+			}
 
-	        // 清空 UART3 的 RX buffer（避免下一輪越來越長）
-	        dma_rx_reset(&huart3);
+
+	        // Ping
+//	        uart_send(&huart1, "Ping from UART1\r\n");
+
+	        uart1_ready = 0;
 	    }
 
 	    if (uart3_ready) {
-	        uart3_ready = 0;
 
 	        print("\r\n[UART3][PASS:%d] recv %d bytes\r\n", pass_count, uart3_len);
+	        // print msg
+//	        for (uint16_t i = 0; i < uart3_len; i++)
+//	            print("%c", uart3_data[i]);
+//	        print("\r\n");
 
-	        // 打印資料
-	        for (uint16_t i = 0; i < uart3_len; i++)
-	            print("%c", uart3_data[i]);
+	        /* handle_binary_cmd */
+			int ret = parse_packet(uart3_data, uart3_len);
+			if (ret == 0) {
+				uint8_t payload_len = uart3_data[1];       // payload_len = cmd_id + params
+				uint8_t *payload = &uart3_data[2];         // payload start = cmd_id
 
-	        print("\r\n");
+				handle_binary_cmd(payload, payload_len);
+			} else {
+				print("Packet error: %d\r\n", ret);
+			}
 
-	        // 回傳 Pong
-	        uart_send(&huart1, "Pong from UART3\r\n");
+	        // Pong
+//	        uart_send(&huart3, "Pong from UART3\r\n");
 
-	        // 清空 UART1 RX buffer
-	        dma_rx_reset(&huart1);
+	        uart3_ready = 0;
 	    }
 	}
 
@@ -641,213 +1069,6 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-
-
-
-/* Definition of CMDs BEGIN*/
-typedef void (*CmdHandler)(int argc, char **argv);
-
-// The way to link between CMD(enum type) and CMD(char *) -> struct include both cmd_name & handler.
-typedef struct {
-	char *cmd_name;
-	CmdHandler handler;
-} CmdEntry;
-
-void func_led_on(int para_count, char **para){
-	if(para_count != 0){
-		print("error: func_led_on: para_count != 0, must check!\r\n");
-		return;
-	}
-	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
-}
-void func_led_off(int para_count, char **para){
-	if(para_count != 0){
-		print("error: func_led_off: para_count != 0, must check!\r\n");
-		return;
-	}
-	HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_RESET);
-}
-void func_set_led(int para_count, char **para){
-	if(para_count != 1){
-		print("error: func_led_off: para_count = %d != 1, must check!\r\n", para_count);
-		return;
-	}
-	int led_num;
-    sscanf(para[0], "%d", &led_num); // led_num will be 1
-	if (led_num == 1) HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
-//	else if (led_num == 2) HAL_GPIO_WritePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin, GPIO_PIN_SET);
-}
-void func_uart_tx(int para_count, char **para){
-	char *paraStr = malloc(strlen(para[0]) + 1);  // +1 for '\0'
-	if (paraStr != NULL) {
-	    strcpy(paraStr, para[0]);
-	}
-	HAL_UART_Transmit(&huart2, (uint8_t*)paraStr, strlen(paraStr), HAL_MAX_DELAY);
-	// free
-	free(paraStr);
-}
-void func_pwm_on(int para_count, char **para){
-	if(para_count != 2){
-		print("error: func_led_on: para_count != 2, must check!\r\n");
-		return;
-	}
-	int Duty;
-	int Freq;
-
-	sscanf(para[0], "%d", &Duty);
-	sscanf(para[1], "%d", &Freq);
-	if (Duty > 100)
-	{
-		Duty = 100;
-		print("Warning: Max Duty is 100\r\n");
-	}
-	if (Freq < 0 || Freq > 10000)
-	{
-		Freq = 1000;
-		print("Warning: Freq is out-of-range\r\n");
-	}
-	HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-	// ARR is time range.
-//	Duty(%)=ARR/CCR​×100%
-//	ARR (Period) sets the PWM frequency, CCR1 (Pulse) sets the duty cycle.
-//	htim2.Init.Period = 16000;
-//	sConfigOC.Pulse = 5000;
-	htim2.Instance->ARR = 16000000 / Freq;
-	htim2.Instance->CCR1 = htim2.Instance->ARR / 100 * Duty;
-	//
-	//htim2.Instance->CCR1 = htim2.Instance->ARR; //99.99%
-
-	if (Duty == 100 || Duty ==0 ){
-		// Stop PWM
-		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-
-		// set GPIO mode
-		GPIO_InitTypeDef GPIO_InitStruct = {0};
-		GPIO_InitStruct.Pin = GPIO_PIN_0;
-		GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // 普通 GPIO Output
-		GPIO_InitStruct.Pull = GPIO_NOPULL;
-		GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-		HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-		// Duty 100 -> High, Duty 0 -> Low
-		if (Duty == 100)
-			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
-		else
-			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
-	}
-	//__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, htim2.Instance->ARR / 100 * Duty);
-	// Start PWM
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-
-}
-void func_invalid(int para_count, char **para){
-	// TODO: whether or not
-	return;
-}
-
-CmdEntry cmd_table[] = {
-		{"LED_ON", func_led_on },
-		{"LED_OFF", func_led_off },
-		{"SET_LED", func_set_led },
-		{"UART_TX", func_uart_tx },
-		{"PWM_ON",  func_pwm_on  },
-		{"INVALID_CMD", func_invalid },
-};
-
-enum CMD {
-	LED_ON = 0,    // 0
-	LED_OFF,       // 1
-	SET_LED,       // 2
-	UART_TX,       // 3
-	PWM_ON,        // 4
-	INVALID_CMD,   // 5
-};
-/* Definition of CMDs END*/
-
-
-static int is_valid_input(char c){
-
-	if( (c >= 32 && c <= 126) || c == '\r' || c == '\n' || c == '\t'){
-		print("%c", (int) c);
-		return 1;
-	} else if (c == 3){ // ctrl-c
-		memset(cmd_buff, 0, sizeof(cmd_buff));
-		memset(rx_buff, 0, sizeof(rx_buff));
-		cmd_buff_idx = 0;
-		print("^C\r\n");
-	} else {
-		print("\r\nInvalid input: %d\r\n", c);
-		int i=0;
-		while(i < cmd_buff_idx){
-			print("%c", (int) cmd_buff[i]);
-			i++;
-		}
-		memset(rx_buff, 0, sizeof(rx_buff));
-	}
-	return 0;
-}
-
-void process_cmd(void) {
-
-	char rx_char = rx_buff[0];
-
-	if(!is_valid_input(rx_char)){
-		return;
-	}
-
-	if (rx_char == '\r' || rx_char == '\n' || rx_char == '\t') { // Ready to parse CMD_HEAD,  CMD_PARA
-		cmd_buff[cmd_buff_idx] = '\0'; // overwrite last byte
-
-		/* CMD compare BEGIN */
-		const char *delim = " "; // only accept " " for separate parameters
-		char *token;
-		char cmd_head[10];
-		char *cmd_para[5];
-		int para_count = 0;
-
-		print("\r\nTokens:\n\r");
-
-		// First call to get the first token: CMD_HEAD
-		token = strtok(cmd_buff, delim);
-		print("first token is %s\r\n", token);
-		// Check token in CMD_table
-		CmdHandler cmd_handler;
-		int cmd_idx=0;
-		while(cmd_idx != INVALID_CMD) {
-			if(strcmp(token, cmd_table[cmd_idx].cmd_name)==0) {
-				strcpy(cmd_head, token);
-				cmd_handler = cmd_table[cmd_idx].handler;
-				break;
-			}
-			cmd_idx++;
-		}
-		if(cmd_idx == INVALID_CMD){
-			print("Invalid CMD !\r\n");
-			memset(cmd_buff, 0, sizeof(cmd_buff));
-			memset(rx_buff, 0, sizeof(rx_buff));
-			cmd_buff_idx = 0;
-			return;
-		}
-
-
-		token = strtok(NULL, delim);
-		while (token != NULL) {
-			print("next token is %s\r\n", token);
-			// Subsequent calls with NULL to get the next tokens: CMD_PARA
-			cmd_para[para_count++] = token;
-			token = strtok(NULL, delim);
-		}
-		cmd_handler(para_count, cmd_para);
-		memset(cmd_buff, 0, sizeof(cmd_buff));
-		cmd_buff_idx = 0;
-		/* CMD compare END */
-
-	} else {
-		cmd_buff[cmd_buff_idx++] = rx_char;
-	}
-
-	return;
-}
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
