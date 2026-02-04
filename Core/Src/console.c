@@ -2,9 +2,9 @@
  * console.c
  *
  *  Created on: Jan 29, 2026
- *      Author: pega_user
+ *      Author: YC Lin
  */
-#include "main.h"    // 包含了 HAL 所有 module 的 def
+#include "main.h"    // Includes HAL definitions for all modules
 #include "console.h"
 #include <stdio.h>
 

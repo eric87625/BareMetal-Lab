@@ -2,7 +2,7 @@
  * packet.c
  *
  *  Created on: Jan 29, 2026
- *      Author: pega_user
+ *      Author: YC Lin
  */
 #include "packet.h"
 
@@ -10,6 +10,15 @@
 #include <stddef.h>   // NULL
 #include "console.h"  // print()
 #include "cmd.h"  // handle_binary_cmd()
+
+
+void packet_parser_init(PacketParser *p)
+{
+    p->state = PKT_WAIT_HEADER; // Start by waiting for the header
+    p->idx = 0;                 // Reset buffer index
+    p->payload_len = 0;         // Reset payload length
+    memset(p->buf, 0, sizeof(p->buf)); // Optionally clear the buffer
+}
 
 
 /* ----------------------
@@ -26,9 +35,9 @@ void print_packet(uint8_t *buf, uint8_t len, const char *msg)
 }
 
 /* ----------------------
- * 建 packet
+ * Build packet
  * ---------------------- */
-uint8_t build_packet(uint8_t *buf, uint8_t cmd_enum, uint8_t *params,
+uint8_t build_packet(uint8_t *buf, CMD_ID cmd_enum, uint8_t *params,
         uint8_t param_len)
 {
     uint8_t idx = 0;
@@ -56,7 +65,7 @@ uint8_t build_packet(uint8_t *buf, uint8_t cmd_enum, uint8_t *params,
 }
 
 /* ----------------------
- * 發 packet
+ * Send packet
  * ---------------------- */
 void uart_send_bytes(UART_HandleTypeDef *huart, uint8_t *buf, uint8_t len)
 {
@@ -64,7 +73,7 @@ void uart_send_bytes(UART_HandleTypeDef *huart, uint8_t *buf, uint8_t len)
 }
 
 /* ----------------------
- * 解析 packet
+ * Parse packet
  * ---------------------- */
 int parse_packet(uint8_t *buf, uint8_t len)
 {
@@ -100,6 +109,7 @@ void packet_parser_feed(PacketParser *p, uint8_t byte)
     {
 
     case PKT_WAIT_HEADER:
+        print("case %d: PKT_WAIT_HEADER\r\n", PKT_WAIT_HEADER);
         if (byte == CMD_HEADER)
         {
             p->buf[0] = byte;
@@ -109,18 +119,23 @@ void packet_parser_feed(PacketParser *p, uint8_t byte)
         break;
 
     case PKT_WAIT_LEN:
+        print("case %d: PKT_WAIT_LEN\r\n", PKT_WAIT_LEN);
         p->payload_len = byte;
         p->buf[p->idx++] = byte;
         p->state = PKT_WAIT_PAYLOAD;
+
         break;
 
     case PKT_WAIT_PAYLOAD:
+        print("case %d: PKT_WAIT_PAYLOAD\r\n", PKT_WAIT_PAYLOAD);
         p->buf[p->idx++] = byte;
         if (p->idx == p->payload_len + 2)
             p->state = PKT_WAIT_CSUM;
+
         break;
 
     case PKT_WAIT_CSUM:
+        print("case %d: PKT_WAIT_CSUM\r\n", PKT_WAIT_CSUM);
         p->buf[p->idx++] = byte;
         if (parse_packet(p->buf, p->idx) == 0)
         {
@@ -128,6 +143,7 @@ void packet_parser_feed(PacketParser *p, uint8_t byte)
         }
         p->state = PKT_WAIT_HEADER;
         p->idx = 0;
+
         break;
     }
 }

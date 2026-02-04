@@ -97,9 +97,9 @@ void HardFault_Handler(void)
   /* USER CODE BEGIN HardFault_IRQn 0 */
   char *msg = "!!! HARD FAULT !!!\r\n";
   volatile char *p = msg;
-  while(*p)
+    while(*p)
   {
-	while (!(USART1->ISR & USART_ISR_TXFE)) {} // 等待傳送暫存器空
+	while (!(USART1->ISR & USART_ISR_TXFE)) {} // Wait until transmit FIFO is empty
 	USART1->TDR = *p++;
   }
 
@@ -211,9 +211,9 @@ void USART1_IRQHandler(void)
   /* USER CODE BEGIN USART1_IRQn 0 */
   if (__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE))
   {
-	  __HAL_UART_CLEAR_IDLEFLAG(&huart1); // 清掉 IDLE flag
+	  __HAL_UART_CLEAR_IDLEFLAG(&huart1); // Clear IDLE flag
 //	  print("USART1_IRQHandler !!!\r\n");
-	  HAL_UART_IDLE_Callback(&huart1); // 呼叫我們的處理函式
+	  HAL_UART_IDLE_Callback(&huart1); // Call our handler
   }
   HAL_UART_IRQHandler(&huart1);
   /* USER CODE END USART1_IRQn 0 */
@@ -244,10 +244,10 @@ void USART3_4_LPUART1_IRQHandler(void)
   /* USER CODE BEGIN USART3_4_LPUART1_IRQn 0 */
   if (__HAL_UART_GET_FLAG(&huart3, UART_FLAG_IDLE))
   {
-	  __HAL_UART_CLEAR_IDLEFLAG(&huart3); // 清掉 IDLE flag
+	  __HAL_UART_CLEAR_IDLEFLAG(&huart3); // Clear IDLE flag
 //	  print("USART3_4_LPUART1_IRQHandler !!!\r\n");
 
-	  HAL_UART_IDLE_Callback(&huart3); // 呼叫我們的處理函式
+	  HAL_UART_IDLE_Callback(&huart3); // Call our handler
   }
   HAL_UART_IRQHandler(&huart3);
   /* USER CODE END USART3_4_LPUART1_IRQn 0 */

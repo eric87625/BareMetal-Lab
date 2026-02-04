@@ -2,7 +2,7 @@
  * cmd.h
  *
  *  Created on: Jan 30, 2026
- *      Author: pega_user
+ *      Author: YC Lin
  */
 
 #ifndef INC_CMD_H_
@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 /* ---------- CMD enum ---------- */
-enum CMD
+typedef enum
 {
     LED_ON = 0,
     LED_OFF,
@@ -19,7 +19,7 @@ enum CMD
     UART_TX,
     PWM_ON,
     INVALID_CMD,
-};
+}CMD_ID;
 
 /* ---------- Public APIs ---------- */
 void process_cmd(void);

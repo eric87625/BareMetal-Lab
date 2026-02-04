@@ -2,7 +2,7 @@
  * uart_rb.h
  *
  *  Created on: Jan 29, 2026
- *      Author: pega_user
+ *      Author: YC Lin
  */
 
 #ifndef INC_UART_RB_H_
@@ -21,6 +21,7 @@ typedef struct {
 } RingBuffer;
 
 /* API */
+void rb_init(RingBuffer *rb);
 void rb_push(RingBuffer *rb, uint8_t data);
 int  rb_pop(RingBuffer *rb, uint8_t *out);
 

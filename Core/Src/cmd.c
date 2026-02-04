@@ -2,7 +2,7 @@
  * cmd.c
  *
  *  Created on: Jan 30, 2026
- *      Author: pega_user
+ *      Author: YC Lin
  */
 
 #include "cmd.h"
@@ -109,7 +109,7 @@ void func_pwm_on(int para_count, char **para)
         // set GPIO mode
         GPIO_InitTypeDef GPIO_InitStruct = { 0 };
         GPIO_InitStruct.Pin = GPIO_PIN_0;
-        GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // 普通 GPIO Output
+        GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // Regular GPIO output
         GPIO_InitStruct.Pull = GPIO_NOPULL;
         GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
         HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);

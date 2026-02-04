@@ -29,8 +29,7 @@
 #include "uart_rb.h"
 #include "packet.h"
 #include "cmd.h"
-
-
+#include "uart_test.h"
 
 /* USER CODE END Includes */
 
@@ -108,6 +107,20 @@ static RingBuffer rb_uart3;
 static PacketParser parser1;
 static PacketParser parser3;
 
+/* Helper: drain ring buffer to parser
+ * max_bytes = 0 for unlimited drain in main loop
+ * use a small cap (e.g., 32) when called from interrupt context */
+static inline void drain_rb_parser(RingBuffer *rb, PacketParser *parser, uint16_t max_bytes)
+{
+    uint8_t ch;
+    uint16_t count = 0;
+    while (rb_pop(rb, &ch))
+    {
+        packet_parser_feed(parser, ch);
+        if (max_bytes && (++count >= max_bytes))
+            break;
+    }
+}
 
 void uart_init_dma(void)
 {
@@ -130,7 +143,6 @@ void uart_init_dma(void)
 //    __HAL_DMA_ENABLE_IT(huart3.hdmarx, DMA_IT_HT);
 //    __HAL_DMA_ENABLE_IT(huart3.hdmarx, DMA_IT_TC);
 
-
     print("**********End of uart_init_dma **********\r\n");
 }
 
@@ -142,149 +154,93 @@ void uart_send(UART_HandleTypeDef *huart, const char *msg)
 }
 
 /* ---------- IDLE callback (no TX) ---------- */
-//void HAL_UART_IDLE_Callback(UART_HandleTypeDef *huart) {
-//	__HAL_UART_CLEAR_IDLEFLAG(huart);
-//	print("\r\n ===== HAL_UART_IDLE_Callback by %d  =====\r\n",
-//			huart->Instance == USART1 ? 1 : 3);
-//
-//	uint16_t received_bytes = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
-//
-//	// 空資料直接忽略（避免第一次啟動就亂觸發）
-//	if (received_bytes == 0)
-//		return;
-//
-//	// 避免 DMA 還未接收到完整資料時誤觸發
-//	if (received_bytes > RX_BUF_SIZE)
-//		return;
-//
-//	if (huart->Instance == USART1) {
-//		memcpy(uart1_data, uart1_rx_buf, received_bytes);
-//		uart1_len = received_bytes;
-//		uart1_ready = 1;
-//
-////		HAL_UART_DMAStop(huart);
-////		memset(uart1_rx_buf, 0, RX_BUF_SIZE);
-//		HAL_UART_Receive_DMA(huart, uart1_rx_buf, RX_BUF_SIZE);
-//	} else if (huart->Instance == USART3) {
-//		memcpy(uart3_data, uart3_rx_buf, received_bytes);
-//		uart3_len = received_bytes;
-//		uart3_ready = 1;
-//
-////		HAL_UART_DMAStop(huart);
-////		memset(uart3_rx_buf, 0, RX_BUF_SIZE);
-//		HAL_UART_Receive_DMA(huart, uart3_rx_buf, RX_BUF_SIZE);
-//	}
-//}
 void HAL_UART_IDLE_Callback(UART_HandleTypeDef *huart)
 {
-    print("\r\n ===== HAL_UART_IDLE_Callback by %d  =====\r\n\r\n",
-            huart->Instance == USART1 ? 1 : 3);
     __HAL_UART_CLEAR_IDLEFLAG(huart);
+    // Use pure circular DMA: compute current write position and process only new bytes
+    uint16_t cur_pos = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
+    static uint16_t last_pos_uart1 = 0;
+    static uint16_t last_pos_uart3 = 0;
 
-    uint16_t cnt = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
-    static uint16_t cur_uart1_rx_buf_idx = 0UL;
-    static uint16_t cur_uart3_rx_buf_idx = 0UL;
-    print("cnt = %d\r\n", cnt);
-
-    if (cnt == 0)
+    if (cur_pos > RX_BUF_SIZE)
         return;
 
     if (huart->Instance == USART1)
     {
-        for (; cur_uart1_rx_buf_idx < cnt; cur_uart1_rx_buf_idx++)
+        uint16_t last = last_pos_uart1;
+        if (cur_pos != last)
         {
-            rb_push(&rb_uart1, uart1_rx_buf[cur_uart1_rx_buf_idx]);
+            if (cur_pos > last)
+            {
+                for (uint16_t i = last; i < cur_pos; i++)
+                    rb_push(&rb_uart1, uart1_rx_buf[i]);
+            }
+            else
+            {
+                for (uint16_t i = last; i < RX_BUF_SIZE; i++)
+                    rb_push(&rb_uart1, uart1_rx_buf[i]);
+                for (uint16_t i = 0; i < cur_pos; i++)
+                    rb_push(&rb_uart1, uart1_rx_buf[i]);
+            }
+            last_pos_uart1 = cur_pos;
+            // Drain a small batch in ISR context to improve responsiveness
+            drain_rb_parser(&rb_uart1, &parser1, 32);
         }
-        HAL_UART_Receive_DMA(huart, uart1_rx_buf, RX_BUF_SIZE);
     }
     else if (huart->Instance == USART3)
     {
-        for (; cur_uart3_rx_buf_idx < cnt; cur_uart3_rx_buf_idx++)
+        uint16_t last = last_pos_uart3;
+        if (cur_pos != last)
         {
-            rb_push(&rb_uart3, uart3_rx_buf[cur_uart3_rx_buf_idx]);
+            if (cur_pos > last)
+            {
+                for (uint16_t i = last; i < cur_pos; i++)
+                    rb_push(&rb_uart3, uart3_rx_buf[i]);
+            }
+            else
+            {
+                for (uint16_t i = last; i < RX_BUF_SIZE; i++)
+                    rb_push(&rb_uart3, uart3_rx_buf[i]);
+                for (uint16_t i = 0; i < cur_pos; i++)
+                    rb_push(&rb_uart3, uart3_rx_buf[i]);
+            }
+            last_pos_uart3 = cur_pos;
+            // Drain a small batch in ISR context to improve responsiveness
+            drain_rb_parser(&rb_uart3, &parser3, 32);
         }
-        HAL_UART_Receive_DMA(huart, uart3_rx_buf, RX_BUF_SIZE);
     }
 }
 
-
-/*
- CMD enum 對應：
- LED_ON   = 0
- LED_OFF  = 1
- SET_LED  = 2
- UART_TX  = 3
- PWM_ON   = 4
- */
-void send_test_cmd(void)
-{
-    static uint8_t cmd_index = 0;  // 記錄下一個要發送的 command
-    uint8_t packet[64];
-    uint8_t len;
-
-    print("\r\n\n=== Sending One Test Binary Command ===\r\n\n");
-
-    switch (cmd_index)
-    {
-    case 0: // LED_ON
-        len = build_packet(packet, LED_ON, NULL, 0);
-        uart_send_bytes(&huart3, packet, len);
-//            print("Send LED_ON cmd\r\n");
-
-        for(int i=0;i<5;i++)
-        {
-            print("i = %d\r\n",i);
-            uint8_t led_num = 1;
-            len = build_packet(packet, SET_LED, &led_num, 1);
-            uart_send_bytes(&huart3, packet, len);
-            uint8_t msg[] = "Hello";
-            len = build_packet(packet, UART_TX, msg, sizeof(msg));
-            uart_send_bytes(&huart3, packet, len);
-        }
-
-        break;
-
-//        case 1: // LED_OFF
-//            len = build_packet(packet, LED_OFF, NULL, 0);
-//            uart_send_bytes(&huart1, packet, len);
-//            print("Send LED_OFF cmd\r\n");
-//            break;
+//void HAL_UART_IDLE_Callback(UART_HandleTypeDef *huart)
+//{
+//    print("\r\n ===== HAL_UART_IDLE_Callback by %d  =====\r\n\r\n",
+//            huart->Instance == USART1 ? 1 : 3);
+//    __HAL_UART_CLEAR_IDLEFLAG(huart);
 //
-//        case 2: // SET_LED
-//        {
-//            uint8_t led_num = 1;
-//            len = build_packet(packet, SET_LED, &led_num, 1);
-//            uart_send_bytes(&huart3, packet, len);
-//            print("Send SET_LED cmd (led_num=1)\r\n");
-//            break;
-//        }
+//    uint16_t cnt = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
+//    static uint16_t cur_uart1_rx_buf_idx = 0UL;
+//    static uint16_t cur_uart3_rx_buf_idx = 0UL;
 //
-//        case 3: // UART_TX
-//        {
-//            uint8_t msg[] = "Hello";
-//            len = build_packet(packet, UART_TX, msg, sizeof(msg));
-//            uart_send_bytes(&huart3, packet, len);
-//            print("Send UART_TX cmd (Hello)\r\n");
-//            break;
-//        }
+//    if (cnt == 0)
+//        return;
 //
-//        case 4: // PWM_ON
+//    if (huart->Instance == USART1)
+//    {
+//        for (; cur_uart1_rx_buf_idx < cnt; cur_uart1_rx_buf_idx++)
 //        {
-//            uint8_t pwm_args[2] = {50, 1000 >> 8}; // 根據 handler 調整
-//            len = build_packet(packet, PWM_ON, pwm_args, 2);
-//            uart_send_bytes(&huart3, packet, len);
-//            print("Send PWM_ON cmd (Duty=50, Freq=1000)\r\n");
-//            break;
+//            rb_push(&rb_uart1, uart1_rx_buf[cur_uart1_rx_buf_idx]);
 //        }
-
-    default:
-        print("All test cmds sent, restarting...\r\n");
-        cmd_index = 0;  // 從頭開始
-        return;
-    }
-
-    cmd_index++; // 下一次呼叫送下一個 command
-}
+//        HAL_UART_Receive_DMA(huart, uart1_rx_buf, RX_BUF_SIZE);
+//    }
+//    else if (huart->Instance == USART3)
+//    {
+//        for (; cur_uart3_rx_buf_idx < cnt; cur_uart3_rx_buf_idx++)
+//        {
+//            rb_push(&rb_uart3, uart3_rx_buf[cur_uart3_rx_buf_idx]);
+//        }
+//        HAL_UART_Receive_DMA(huart, uart3_rx_buf, RX_BUF_SIZE);
+//    }
+//}
 
 /* USER CODE END 0 */
 
@@ -311,7 +267,7 @@ int main(void)
     SystemClock_Config();
 
     /* USER CODE BEGIN SysInit */
-
+    
     /* USER CODE END SysInit */
 
     /* Initialize all configured peripherals */
@@ -336,87 +292,76 @@ int main(void)
     print("=== UART1 <-> UART3 DMA loopback test ===\r\n");
 
     uart_init_dma();
+    // Initialize ring buffers and streaming parsers for UART1/3
+    rb_init(&rb_uart1);
+    rb_init(&rb_uart3);
+    packet_parser_init(&parser1);
+    packet_parser_init(&parser3);
 
-    // 手動發第一次 Ping（你決定是否要啟動）
-//	uart_send(&huart1, "Ping from UART1\r\n");
-//	uart_send(&huart3, "Ping from UART3\r\n");
-//    send_test_cmd();
-
-    int send_count = 1;
-//	while (HAL_GetTick() < 1000) {
-    while (send_count--)
     {
-//		HAL_Delay(500);
-        send_test_cmd();
+        // uart_test:
 
-        uint8_t ch;
+        // init
+        uart_test_init(&huart3);
 
-        while (rb_pop(&rb_uart1, &ch))
-            packet_parser_feed(&parser1, ch);
+        // UART_TEST_SINGLE_CMD
+        uart_test_run(UART_TEST_SINGLE_CMD);
 
-        while (rb_pop(&rb_uart3, &ch))
-            packet_parser_feed(&parser3, ch);
+        // UART_TEST_CMD_WITH_IDLE
+        uart_test_run(UART_TEST_CMD_WITH_IDLE);
 
-//
-//		if (uart1_ready) {
-//
-//			print("\r\n[UART1][PASS:%d] recv %d bytes\r\n", pass_count,
-//					uart1_len);
-//			// print msg
-////	        for (uint16_t i = 0; i < uart1_len; i++)
-////	            print("%c", uart1_data[i]);
-////	        print("\r\n");
-//
-//			/* handle_binary_cmd */
-//			//TODO:
-////	        int ret = parse_packet(uart1_data, uart1_len, idx);
-//			print_packet(uart1_data, uart1_len, "uart1_data = ");
-//
-//			int ret = parse_packet(uart1_data, uart1_len);
-//			if (ret == 0) {
-//				uint8_t payload_len = uart1_data[1]; // payload_len = cmd_id + params
-//				uint8_t *payload = &uart1_data[2];     // payload start = cmd_id
-//
-//				handle_binary_cmd(payload, payload_len);
-//			} else {
-//				print("Packet error: %d\r\n", ret);
-//			}
-//
-//			// Ping
-////	        uart_send(&huart1, "Ping from UART1\r\n");
-//
-//			uart1_ready = 0;
-//		}
-//
-//		if (uart3_ready) {
-//
-//			print("\r\n[UART3][PASS:%d] recv %d bytes\r\n", pass_count,
-//					uart3_len);
-//			// print msg
-////	        for (uint16_t i = 0; i < uart3_len; i++)
-////	            print("%c", uart3_data[i]);
-////	        print("\r\n");
-//
-//			/* handle_binary_cmd */
-//			int ret = parse_packet(uart3_data, uart3_len);
-//			if (ret == 0) {
-//				uint8_t payload_len = uart3_data[1]; // payload_len = cmd_id + params
-//				uint8_t *payload = &uart3_data[2];     // payload start = cmd_id
-//
-//				handle_binary_cmd(payload, payload_len);
-//			} else {
-//				print("Packet error: %d\r\n", ret);
-//			}
-//
-//			// Pong
-////	        uart_send(&huart3, "Pong from UART3\r\n");
-//
-//			uart3_ready = 0;
-//		}
+        // CMD_STICKY
+        uart_test_run(UART_TEST_CMD_STICKY);
+
+        // UART_TEST_CONTINUOUS_STREAM
+        uart_test_run(UART_TEST_CONTINUOUS_STREAM);
+
+    }
+
+    // Manually send the first Ping (optional to start)
+//    uart_send(&huart1, "Ping from UART1\r\n");
+//    uart_send(&huart3, "Ping from UART3\r\n");
+
+    while (HAL_GetTick() < 1000)
+    {
+        // Unbounded drain in main loop for steady parsing
+//        drain_rb_parser(&rb_uart1, &parser1, 0);
+//        drain_rb_parser(&rb_uart3, &parser3, 0);
+
+        if (uart1_ready)
+        {
+
+            print("\r\n[UART1][PASS:%d] recv %d bytes\r\n", pass_count,
+                    uart1_len);
+            // print msg
+            for (uint16_t i = 0; i < uart1_len; i++)
+                print("%c", uart1_data[i]);
+            print("\r\n");
+
+            // Ping
+            uart_send(&huart1, "Ping from UART1\r\n");
+
+            uart1_ready = 0;
+        }
+
+        if (uart3_ready)
+        {
+
+            print("\r\n[UART3][PASS:%d] recv %d bytes\r\n", pass_count,
+                    uart3_len);
+            // print msg
+            for (uint16_t i = 0; i < uart3_len; i++)
+                print("%c", uart3_data[i]);
+            print("\r\n");
+
+            // Pong
+            uart_send(&huart3, "Pong from UART3\r\n");
+
+            uart3_ready = 0;
+        }
     }
 
     HAL_UART_Receive_DMA(&huart2, rx_buff, 1);
-//	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 
     /* USER CODE END 2 */
 
