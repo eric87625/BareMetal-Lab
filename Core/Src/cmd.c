@@ -76,11 +76,34 @@ void func_uart_tx(int para_count, char **para)
     // free
     free(paraStr);
 }
+/* ---------- PWM/GPIO helpers ---------- */
+static void set_pwm_pin_gpio(int high)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, high ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+static void set_pwm_pin_af(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM2; // PA0 -> TIM2_CH1
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+}
 void func_pwm_on(int para_count, char **para)
 {
     if (para_count != 2)
     {
-        print("error: func_led_on: para_count != 2, must check!\r\n");
+        print("error: func_pwm_on: para_count != 2, must check!\r\n");
         return;
     }
     int Duty;
@@ -99,44 +122,29 @@ void func_pwm_on(int para_count, char **para)
         print("Warning: Freq is out-of-range\r\n");
     }
 
-    // Stop PWM
+    // Stop PWM before reconfiguring
     HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-
-    //htim2.Instance->CCR1 = htim2.Instance->ARR; //99.99%
 
     if (Duty == 100 || Duty == 0)
     {
-        // set GPIO mode
-        GPIO_InitTypeDef GPIO_InitStruct = { 0 };
-        GPIO_InitStruct.Pin = GPIO_PIN_0;
-        GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // Regular GPIO output
-        GPIO_InitStruct.Pull = GPIO_NOPULL;
-        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-        HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-        // Duty 100 -> High, Duty 0 -> Low
-        if (Duty == 100)
-            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);
-        else
-            HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET);
+        // Duty 100 -> High, Duty 0 -> Low (GPIO mode)
+        set_pwm_pin_gpio(Duty == 100);
     }
-    // TODO: else PIN reset to PWM mode
     else
     {
-        //TODO: Init PIN to PWM mode
-        /*
-         *
-         *
-         *
-         */
-
+        // Ensure pin is in PWM AF mode
+        set_pwm_pin_af();
         // ARR is time range.
         //    Duty(%)=ARR/CCR​×100%
         //    ARR (Period) sets the PWM frequency, CCR1 (Pulse) sets the duty cycle.
         //    htim2.Init.Period = 16000;
         //    sConfigOC.Pulse = 5000;
-        htim2.Instance->ARR = 16000000 / Freq;
-        htim2.Instance->CCR1 = htim2.Instance->ARR / 100 * Duty;
+        uint32_t arr = 16000000 / (uint32_t)Freq;
+        if (arr == 0) arr = 1;
+        htim2.Instance->ARR = arr;
+        uint32_t ccr = (arr * (uint32_t)Duty) / 100;
+        if (ccr >= arr) ccr = arr - 1; // ensure strictly less than ARR
+        htim2.Instance->CCR1 = ccr;
         //
         // Start PWM
         HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
