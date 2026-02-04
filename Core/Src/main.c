@@ -156,6 +156,8 @@ void uart_send(UART_HandleTypeDef *huart, const char *msg)
 /* ---------- IDLE callback (no TX) ---------- */
 void HAL_UART_IDLE_Callback(UART_HandleTypeDef *huart)
 {
+    print("\r\n ===== HAL_UART_IDLE_Callback by %d  =====\r\n\r\n",
+                huart->Instance == USART1 ? 1 : 3);
     __HAL_UART_CLEAR_IDLEFLAG(huart);
     // Use pure circular DMA: compute current write position and process only new bytes
     uint16_t cur_pos = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
@@ -667,7 +669,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
         //	print("RX callback triggered\r\n");
 
-        HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
+        // HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
         //	HAL_GPIO_TogglePin(LED_GREEN_GPIO_Port, LED_GREEN_Pin);
 
         HAL_UART_Receive_DMA(&huart2, rx_buff, 1);
