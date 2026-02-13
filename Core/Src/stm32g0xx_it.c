@@ -215,8 +215,8 @@ void USART1_IRQHandler(void)
 //	  print("USART1_IRQHandler !!!\r\n");
 	  HAL_UART_IDLE_Callback(&huart1); // Call our handler
   }
-  HAL_UART_IRQHandler(&huart1);
   /* USER CODE END USART1_IRQn 0 */
+  HAL_UART_IRQHandler(&huart1);
   /* USER CODE BEGIN USART1_IRQn 1 */
 
   /* USER CODE END USART1_IRQn 1 */
@@ -249,8 +249,8 @@ void USART3_4_LPUART1_IRQHandler(void)
 
 	  HAL_UART_IDLE_Callback(&huart3); // Call our handler
   }
-  HAL_UART_IRQHandler(&huart3);
   /* USER CODE END USART3_4_LPUART1_IRQn 0 */
+  HAL_UART_IRQHandler(&huart3);
   /* USER CODE BEGIN USART3_4_LPUART1_IRQn 1 */
 
   /* USER CODE END USART3_4_LPUART1_IRQn 1 */

@@ -18,6 +18,7 @@ typedef enum
     SET_LED,
     UART_TX,
     PWM_ON,
+    CRASH,
     INVALID_CMD,
 }CMD_ID;
 

@@ -10,9 +10,11 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #include "main.h"     // GPIO / TIM / UART handle
 #include "console.h"  // print()
+#include "watchdog.h" // System_Simulate_Deadlock()
 
 /* ---------- external resources from main.c ---------- */
 extern UART_HandleTypeDef huart2;
@@ -30,6 +32,17 @@ typedef struct
     char *cmd_name;
     CmdHandler handler;
 } CmdEntry;
+
+static void str_to_upper_inplace(char *s)
+{
+    if (s == NULL)
+        return;
+    while (*s)
+    {
+        *s = (char)toupper((unsigned char)*s);
+        s++;
+    }
+}
 
 /* ---------- CMD handlers ---------- */
 void func_led_on(int para_count, char **para)
@@ -151,6 +164,19 @@ void func_pwm_on(int para_count, char **para)
     }
 
 }
+
+void func_crash(int para_count, char **para)
+{
+    (void)para;
+    if (para_count != 0)
+    {
+        print("error: CRASH takes no parameters\r\n");
+        return;
+    }
+
+    print("\r\n[SYSTEM] Simulating deadlock now...\r\n");
+    System_Simulate_Deadlock();
+}
 void func_invalid(int para_count, char **para)
 {
     // TODO: whether or not
@@ -164,6 +190,7 @@ static CmdEntry cmd_table[] = {
     {"SET_LED",    func_set_led},
     {"UART_TX",    func_uart_tx},
     {"PWM_ON",     func_pwm_on},
+    {"CRASH",      func_crash},
     {"INVALID_CMD",func_invalid},
 };
 
@@ -224,6 +251,7 @@ void process_cmd(void)
 
         // First call to get the first token: CMD_HEAD
         token = strtok(cmd_buff, delim);
+        str_to_upper_inplace(token);
         print("first token is %s\r\n", token);
         // Check token in CMD_table
         CmdHandler cmd_handler;
