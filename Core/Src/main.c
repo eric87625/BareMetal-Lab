@@ -434,11 +434,10 @@ int main(void)
       /* Optional: add background tasks here. */
       HAL_Delay(10);
   }
-    /* USER CODE END WHILE */
+  /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
-//	HAL_UART_Transmit_IT(&huart2, tx_buff, 10);
-//	HAL_Delay(10000);
+  /* USER CODE BEGIN 3 */
+
   /* USER CODE END 3 */
 }
 
@@ -781,7 +780,13 @@ void StartDefaultTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    /* After osKernelStart(), the main() infinite loop is no longer executed.
+     * Refresh watchdog here to avoid periodic resets.
+     * Note: current CubeMX IWDG config appears to be a short timeout, so keep
+     * the refresh period comfortably below it.
+     */
+    Watchdog_Refresh();
+    osDelay(100);
   }
   /* USER CODE END 5 */
 }

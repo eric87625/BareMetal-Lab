@@ -44,12 +44,19 @@ void Watchdog_Init(void)
 
 void Watchdog_Refresh(void)
 {
-    if (!s_watchdog_started)
-        return;
-
-    /* Refresh should be done in the main loop. If main loop stalls,
-     * the watchdog will reset the system and recover.
+    /* In CubeMX-generated projects, IWDG might be initialized by MX_IWDG_Init()
+     * (not via Watchdog_Init()). In that case, still allow refresh to prevent
+     * unintended resets after the RTOS scheduler starts.
      */
+    if (!s_watchdog_started)
+    {
+        if (HAL_IWDG_Refresh(&hiwdg) == HAL_OK)
+        {
+            s_watchdog_started = 1;
+        }
+        return;
+    }
+
     (void)HAL_IWDG_Refresh(&hiwdg);
 }
 
