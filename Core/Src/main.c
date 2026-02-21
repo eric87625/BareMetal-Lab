@@ -32,6 +32,8 @@
 #include "cmd.h"
 #include "uart_test.h"
 #include "watchdog.h"
+#include "latency.h"
+#include "load_task.h"
 
 /* USER CODE END Includes */
 
@@ -321,6 +323,12 @@ int main(void)
     packet_parser_init(&parser1);
     packet_parser_init(&parser3);
 
+    latency_init(&htim3, &huart2);
+    if (HAL_TIM_Base_Start_IT(&htim3) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
     {
         // uart_test:
 
@@ -416,6 +424,8 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+  load_task_start();
+  latency_start_logging_task();
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -582,7 +592,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 63;
+  htim3.Init.Prescaler = 15;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -857,6 +867,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
+
+  if (htim->Instance == TIM3)
+  {
+    latency_on_tim_period_elapsed_isr(htim);
+  }
 
   /* USER CODE END Callback 1 */
 }

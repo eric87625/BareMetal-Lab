@@ -1,3 +1,11 @@
 /Debug/
 .settings/language.settings.xml
 .settings/
+*__pycache__/
+tools/out
+*.pyc
+*.pyo
+*.log
+*.csv
+*.txt
+*.png
