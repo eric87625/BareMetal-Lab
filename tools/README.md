@@ -22,3 +22,7 @@ python tools/capture_latency.py --input tools/out/raw_terminal_dump.txt
 - `latency_raw_*.txt`
 - `latency_*.csv`
 - `latency_*.png`
+
+## 報告
+
+- Phase1 Interrupt Latency Measurement：[tools/InterruptLatencyMeasurement_Report.md](InterruptLatencyMeasurement_Report.md)
