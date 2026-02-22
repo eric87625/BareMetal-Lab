@@ -3,6 +3,10 @@
 #include "main.h"
 #include "cmsis_os2.h"
 
+#ifndef LOAD_TASK_BUSY_MS
+#define LOAD_TASK_BUSY_MS (10U)
+#endif
+
 static volatile uint8_t g_load_active = 0U;
 
 static osThreadId_t g_load_task_handle;
@@ -44,7 +48,7 @@ static void load_task_entry(void *argument)
             }
 
             uint32_t busy_start = osKernelGetTickCount();
-            while ((osKernelGetTickCount() - busy_start) < 2U) //10ms
+            while ((osKernelGetTickCount() - busy_start) < LOAD_TASK_BUSY_MS) // ms
             {
                 __NOP();
             }

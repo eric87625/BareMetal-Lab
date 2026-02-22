@@ -32,8 +32,12 @@
 #include "cmd.h"
 #include "uart_test.h"
 #include "watchdog.h"
+#include "experiments.h"
+
+#if (EXPERIMENT_PHASE1_ENABLE != 0)
 #include "latency.h"
 #include "load_task.h"
+#endif
 
 /* USER CODE END Includes */
 
@@ -323,11 +327,13 @@ int main(void)
     packet_parser_init(&parser1);
     packet_parser_init(&parser3);
 
+  #if (EXPERIMENT_PHASE1_ENABLE != 0)
     latency_init(&htim3, &huart2);
     if (HAL_TIM_Base_Start_IT(&htim3) != HAL_OK)
     {
       Error_Handler();
     }
+  #endif
 
     {
         // uart_test:
@@ -424,8 +430,10 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+  #if (EXPERIMENT_PHASE1_ENABLE != 0)
   load_task_start();
   latency_start_logging_task();
+  #endif
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -868,10 +876,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
   /* USER CODE BEGIN Callback 1 */
 
+  #if (EXPERIMENT_PHASE1_ENABLE != 0)
   if (htim->Instance == TIM3)
   {
     latency_on_tim_period_elapsed_isr(htim);
   }
+  #endif
 
   /* USER CODE END Callback 1 */
 }

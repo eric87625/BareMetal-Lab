@@ -1,6 +1,11 @@
+"""Phase1: TIM3 interrupt latency capture & plotting tool.
+
+This is the Phase1-scoped version of tools/capture_latency.py.
+Default output directory is tools/out/phase1.
+"""
+
 import argparse
 import csv
-import os
 import re
 import sys
 import time
@@ -251,12 +256,12 @@ def plot_comparison(df, out_png_compare_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Capture/parse STM32 latency CSV and plot")
+    parser = argparse.ArgumentParser(description="[Phase1] Capture/parse STM32 latency CSV and plot")
     parser.add_argument("--port", help="Serial port, e.g. COM5")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baudrate")
     parser.add_argument("--seconds", type=int, default=20, help="Capture duration in seconds")
     parser.add_argument("--input", help="Existing raw text file path (instead of serial capture)")
-    parser.add_argument("--outdir", default="tools/out", help="Output directory")
+    parser.add_argument("--outdir", default="tools/out/phase1", help="Output directory")
 
     args = parser.parse_args()
 

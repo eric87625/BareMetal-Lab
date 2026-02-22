@@ -1,3 +1,8 @@
+"""Phase1: helper to compare multiple capture CSV files.
+
+This is the Phase1-scoped version of tools/analyze_two_runs.py.
+"""
+
 import argparse
 from pathlib import Path
 
@@ -11,7 +16,6 @@ def pct(series: pd.Series, q: float) -> float:
 def summarize(path: Path) -> dict:
     d = pd.read_csv(path, comment="#")
 
-    # Ensure numeric and drop malformed rows
     d["seq"] = pd.to_numeric(d.get("seq"), errors="coerce")
     d = d.dropna(subset=["seq"]).copy()
 
@@ -43,7 +47,6 @@ def summarize(path: Path) -> dict:
             out[f"{key}_lat_p99"] = pct(lat, 0.99)
             out[f"{key}_lat_max"] = float(lat.max())
 
-            # Simple "tail" indicators (percent of samples exceeding thresholds)
             out[f"{key}_lat_gt_12_ratio"] = float((lat > 12.0).mean())
             out[f"{key}_lat_ge_14_ratio"] = float((lat >= 14.0).mean())
             out[f"{key}_lat_ge_16_ratio"] = float((lat >= 16.0).mean())
@@ -58,8 +61,8 @@ def summarize(path: Path) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("files", nargs="+", help="CSV files produced by capture_latency.py")
+    ap = argparse.ArgumentParser(description="[Phase1] Compare latency CSV captures")
+    ap.add_argument("files", nargs="+", help="CSV files produced by Phase1 capture tool")
     args = ap.parse_args()
 
     keys = [

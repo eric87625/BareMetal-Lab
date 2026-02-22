@@ -110,8 +110,8 @@ logging task 會印出 CSV 欄位：
 
 ## 4. 實測結果（比較 10ms vs 2ms load）
 
-資料檔案：
-- 10ms load： [tools/out/latency_20260221_003936.csv](out/latency_20260221_003936.csv)
+資料檔案（範例）：
+- 10ms load： [tools/out/latency_20260221_003936.csv](out/latency_20260221_003936.csv)（舊資料可能在 `tools/out/` 根目錄）
 - 2ms load： [tools/out/latency_20260221_012039.csv](out/latency_20260221_012039.csv)
 
 ### 4.1 掉樣（輸出跟不上）觀察
@@ -160,18 +160,18 @@ logging task 會印出 CSV 欄位：
 
 ### 5.1 串口抓取
 
-使用 [tools/capture_latency.py](capture_latency.py)：
+使用 Phase1 工具 [tools/phase1/capture_latency.py](phase1/capture_latency.py)：
 
 - 直接抓 COM 口輸出：
-  - `python tools/capture_latency.py --port COM5 --baud 115200 --seconds 200`
+  - `python tools/phase1/capture_latency.py --port COM5 --baud 115200 --seconds 200`
 
 - 讀取既有 CSV 再產生圖：
-  - `python tools/capture_latency.py --input tools/out/latency_20260221_012039.csv`
+  - `python tools/phase1/capture_latency.py --input tools/out/phase1/latency_20260221_012039.csv`
 
 ### 5.2 分析兩份 run 的統計
 
-使用 [tools/analyze_two_runs.py](analyze_two_runs.py)：
-- `python tools/analyze_two_runs.py tools/out/latency_20260221_003936.csv tools/out/latency_20260221_012039.csv`
+使用 Phase1 工具 [tools/phase1/analyze_two_runs.py](phase1/analyze_two_runs.py)：
+- `python tools/phase1/analyze_two_runs.py tools/out/phase1/latency_20260221_003936.csv tools/out/phase1/latency_20260221_012039.csv`
 
 ---
 
