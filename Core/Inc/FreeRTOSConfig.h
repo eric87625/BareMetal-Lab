@@ -68,7 +68,11 @@
 #define configTICK_RATE_HZ                       ((TickType_t)1000)
 #define configMAX_PRIORITIES                     ( 56 )
 #define configMINIMAL_STACK_SIZE                 ((uint16_t)128)
-#define configTOTAL_HEAP_SIZE                    ((size_t)3072)
+/* Note: 3072 bytes is too small once additional CMSIS-RTOS2 threads are added
+ * (Phase2 creates 3 more threads plus a semaphore). Increase heap to prevent
+ * osThreadNew()/semaphore creation from failing silently.
+ */
+#define configTOTAL_HEAP_SIZE                    ((size_t)12288)
 #define configMAX_TASK_NAME_LEN                  ( 16 )
 #define configUSE_TRACE_FACILITY                 1
 #define configUSE_16_BIT_TICKS                   0

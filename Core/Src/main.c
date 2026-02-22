@@ -34,6 +34,10 @@
 #include "watchdog.h"
 #include "experiments.h"
 
+#if (EXPERIMENT_PHASE2_ENABLE != 0)
+#include "phase2_pi.h"
+#endif
+
 #if (EXPERIMENT_PHASE1_ENABLE != 0)
 #include "latency.h"
 #include "load_task.h"
@@ -48,6 +52,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+/* Avoid UART TX/printf inside ISR by default (can cause watchdog resets). */
+#ifndef UART_IDLE_DEBUG_PRINT
+#define UART_IDLE_DEBUG_PRINT 0
+#endif
 
 /* USER CODE END PD */
 
@@ -178,8 +187,10 @@ void uart_send(UART_HandleTypeDef *huart, const char *msg)
 /* ---------- IDLE callback (no TX) ---------- */
 void HAL_UART_IDLE_Callback(UART_HandleTypeDef *huart)
 {
+  #if (UART_IDLE_DEBUG_PRINT != 0)
     print("\r\n ===== HAL_UART_IDLE_Callback by %d  =====\r\n\r\n",
                 huart->Instance == USART1 ? 1 : 3);
+  #endif
     __HAL_UART_CLEAR_IDLEFLAG(huart);
     // Use pure circular DMA: compute current write position and process only new bytes
     uint16_t cur_pos = RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart->hdmarx);
@@ -434,6 +445,10 @@ int main(void)
   load_task_start();
   latency_start_logging_task();
   #endif
+
+  #if (EXPERIMENT_PHASE2_ENABLE != 0)
+  phase2_pi_start();
+  #endif
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -519,9 +534,13 @@ static void MX_IWDG_Init(void)
 
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
-  hiwdg.Init.Window = 4095;
-  hiwdg.Init.Reload = 4095;
+  /* Increase watchdog timeout to avoid resets during RTOS load/printing.
+   * Timeout formula: T = (Reload + 1) / (LSI / Prescaler)
+   * With Prescaler=32, Reload=1999, and LSI≈32kHz => T≈2.0s.
+   */
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_32;
+  hiwdg.Init.Window = IWDG_WINDOW_DISABLE;
+  hiwdg.Init.Reload = 1999;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
   {
     Error_Handler();

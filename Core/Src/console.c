@@ -17,7 +17,7 @@ void console_init(void *uart_handle)
 
 int print(const char *str, ...) {
 
-	char buf[256];
+	char buf[512];
 	va_list args; // Declare a va_list to hold the variable arguments
 
 	va_start(args, str); // Initialize va_list with the last fixed argument (str)
@@ -29,15 +29,17 @@ int print(const char *str, ...) {
 		return -1;
 	}
 
-	// Ensure null termination in case of truncation by snprintf
-	if (cur_buf_len >= sizeof(buf)) {
+	// Ensure null termination and clamp transmit length in case of truncation
+	int tx_len = cur_buf_len;
+	if (tx_len >= (int)sizeof(buf)) {
 		buf[sizeof(buf) - 1] = '\0';
+		tx_len = (int)sizeof(buf) - 1;
 	}
 
 	// Print the formatted string to uart output
 //  HAL_StatusTypeDef ret = HAL_UART_Transmit_DMA(&huart2, (uint8_t *)buf, len);
 //  HAL_StatusTypeDef ret = HAL_UART_Transmit_IT(&huart2, (uint8_t *)buf, len);
-	int ret = HAL_UART_Transmit(console_uart, (uint8_t*) buf, cur_buf_len, HAL_MAX_DELAY) == HAL_OK;
+	int ret = HAL_UART_Transmit(console_uart, (uint8_t*) buf, (uint16_t)tx_len, HAL_MAX_DELAY) == HAL_OK;
 	return ret;
 }
 
