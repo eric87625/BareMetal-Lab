@@ -111,8 +111,20 @@ logging task 會印出 CSV 欄位：
 ## 4. 實測結果（比較 10ms vs 2ms load）
 
 資料檔案（範例）：
-- 10ms load： [tools/out/latency_20260221_003936.csv](out/latency_20260221_003936.csv)（舊資料可能在 `tools/out/` 根目錄）
-- 2ms load： [tools/out/latency_20260221_012039.csv](out/latency_20260221_012039.csv)
+- 10ms load： [tools/out/phase1/latency_20260221_003936.csv](../out/phase1/latency_20260221_003936.csv)
+- 2ms load： [tools/out/phase1/latency_20260221_012039.csv](../out/phase1/latency_20260221_012039.csv)
+
+分析結果圖（單次 run）：
+
+![10ms load (003936) latency/exec plots](../out/phase1/latency_20260221_003936_10ms.png)
+
+![2ms load (012039) latency/exec plots](../out/phase1/latency_20260221_012039_2ms.png)
+
+分析結果圖（compare）：
+
+![Compare view (003936, 10ms)](../out/phase1/latency_compare_20260221_003936_10ms.png)
+
+![Compare view (012039, 2ms)](../out/phase1/latency_compare_20260221_012039_2ms.png)
 
 ### 4.1 掉樣（輸出跟不上）觀察
 

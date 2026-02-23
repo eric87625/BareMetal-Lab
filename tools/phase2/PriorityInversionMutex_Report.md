@@ -4,7 +4,7 @@
 
 ## 1. 這個實驗在做什麼？為什麼重要？
 
-在有「固定優先權搶佔式排程」的 RTOS 裡，**Priority Inversion（優先權反轉）**是一個典型但又很容易被忽略的延遲來源。
+在有「固定優先權搶佔式排程」的 RTOS 裡，**Priority Inversion（優先權反轉）** 是一個典型但又很容易被忽略的延遲來源。
 
 經典條件如下：
 
@@ -99,6 +99,10 @@ Host 端工具會忽略非資料列，只抓 header 與 data rows。
 
 - 輸出資料夾：`tools/out/phase2/analysis_20260222_2234__r1_hold50_j5_hj3_med8000-14000_pause20_crit0/`
 - 統計檔：`summary.csv`
+
+分析結果圖：
+
+![All-in-one figures (this run)](../out/phase2/analysis_20260222_2234__r1_hold50_j5_hj3_med8000-14000_pause20_crit0/fig_all.png)
 
 本次 run 的重要參數（由 `CFG,...` 生成後綴）：
 
