@@ -2,10 +2,13 @@
 .settings/language.settings.xml
 .settings/
 *__pycache__/
-tools/out
+tools/out/**
+!tools/out/**/
+!tools/out/**/*.png
+!tools/out/**/*.jpg
+!tools/out/**/*.jpeg
 *.pyc
 *.pyo
 *.log
 *.csv
 *.txt
-*.png

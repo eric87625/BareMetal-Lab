@@ -125,6 +125,18 @@ Streaming parser：
 
 ---
 
+## 3.3 分析結果圖（預覽）
+
+### Phase1（Interrupt latency）
+
+![Phase1 latency compare](tools/out/phase1/latency_compare_20260221_012039_2ms.png)
+
+### Phase2（Priority inversion / PI）
+
+![Phase2 analysis figures](tools/out/phase2/analysis/fig_all.png)
+
+---
+
 ## 4) Host tools（Python）
 
 - Phase1 工具：`tools/phase1/`
